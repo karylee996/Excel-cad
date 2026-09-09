@@ -1,192 +1,147 @@
 ---
 name: excel-cad
-description: Convert a showroom furniture Excel schedule, a CAD base drawing, and a CAD furniture library into a clean DXF furniture index grouped by zone. Match furniture by the first 6 characters of the normalized model code, preserve full Excel codes and detected brand names, center code and brand text on each furniture block, use SimHei/黑体 for all returned text, and mark unmatched furniture in red. Use for showroom restoration, furniture schedule to CAD, Excel-to-DXF furniture indexing, zone-based CAD furniture summaries, or furniture-library matching workflows.
+description: Convert a showroom furniture Excel schedule, a CAD base drawing, and a CAD furniture library into a clean DXF furniture index grouped by zone. Match furniture by the first 6 characters of the normalized model code, preserve full Excel codes and detected brand names, center code and brand text on each furniture block, use SimHei/黑体 for all returned text, place zone indexes around the base drawing near their corresponding area numbers, and show unmatched furniture as red codes only. Use for showroom restoration, furniture schedule to CAD, Excel-to-DXF furniture indexing, zone-based CAD furniture summaries, or furniture-library matching workflows.
 ---
 
 # Excel-CAD Showroom Furniture Index Skill
 
 ## Purpose
 
-Convert an Excel furniture schedule plus a CAD base drawing and a CAD furniture library into a clean showroom furniture index drawing.
+Convert an Excel furniture schedule + showroom base DXF + furniture-library DXF into a clean CAD furniture index for showroom restoration work.
 
-This Skill is designed for showroom restoration / display design workflows where furniture must be grouped by showroom zone rather than placed directly over the floor plan.
+The final drawing is optimized for the next manual step: quickly finding a zone's furniture and dragging / arranging it into the real showroom area.
 
-## Required Inputs
+## Required inputs
 
-1. **Excel schedule** (`.xlsx`)
-   - Contains zone/area number, furniture code, and quantity.
-   - The sheet may contain more than one repeated group of columns such as `区域 / 编号 / 数量`.
+1. Excel schedule (`.xlsx`): zone / furniture code / quantity. Multiple repeated `区域 / 编号 / 数量` column groups are allowed.
+2. Base drawing (`.dxf`): preserve all original geometry and locations.
+3. Furniture library (`.dxf`): furniture preferably stored as `INSERT` blocks; model code may be in block name or attributes; brand may be an attribute or nearby text.
 
-2. **Base drawing** (`.dxf`)
-   - Existing showroom floor plan.
-   - Must be preserved without moving or altering its geometry.
+## Matching rule
 
-3. **Furniture library** (`.dxf`)
-   - Furniture is preferably stored as `INSERT` blocks.
-   - Block names or nearby text contain the furniture model code.
-   - Nearby text may contain the brand name.
-
-## Final Matching Rule
-
-### Furniture code matching
-
-Use only the **first 6 characters of the normalized furniture code** for matching.
+Match by the first usable **6-character furniture key**, normally `2 letters + 4 digits`.
 
 Examples:
 - `BF1182Z3` → `BF1182`
 - `PF0354-5-1Z2` → `PF0354`
 - `AC1234HZ` → `AC1234`
 
-Normalization:
-- Convert to uppercase.
-- Remove spaces and separators when determining the 6-character key.
-- Prefer the common pattern `2 letters + 4 digits` when present.
-- Do not force-match short ambiguous codes such as `CY`.
+Normalize to uppercase and ignore spaces / separators while finding the key. Do not force-match short ambiguous codes such as `CY`.
 
-## Output Layout Rules
+## Final layout rules
 
-### 1. Do NOT place furniture inside the actual showroom zones
+### 1. Keep the base drawing unchanged
 
-Keep the original base drawing unchanged.
+Do not place the index furniture directly inside the real showroom zones. Do not move, scale, explode, or delete the original floor plan.
 
-Place the generated furniture index in a large blank area outside / beside the base drawing.
+### 2. Put each zone index near its real zone
 
-### 2. Group by zone
+Read the actual zone-number text positions (`01`, `02`, ... or `01区`, `02区`, ... ) from the base drawing.
 
-Create a separate framed group for every zone, for example:
-- 01区
-- 02区
-- 03区
-- ...
+For each zone:
+1. Find its zone-number coordinate.
+2. Determine which base-drawing boundary is nearest: top / bottom / left / right.
+3. Place that zone's furniture index **outside the base drawing on that nearest side**.
+4. Preserve the spatial order of zone numbers along each side.
+5. Avoid overlap by packing panels in the nearest row/column first; if necessary, expand outward into a second/third row rather than moving a zone far away laterally.
 
-Each zone is an independent furniture index block.
+Goal: the zone index should visually correspond to the real zone so the user can quickly move furniture into the plan.
 
-### 3. One graphic per furniture model
+If zone-number coordinates cannot be detected reliably, fall back to a compact perimeter layout around the base drawing. Do not default to one very long stack on the right.
 
-Within each zone:
-- Display each furniture model only once.
-- Do not duplicate the same plan block just because quantity > 1.
-- Show quantity as `×N`.
+### 3. Clean and minimal workspace
 
-### 4. Preserve furniture geometry
+The workspace must remain visually quiet and easy to scan.
 
-When matched:
-- Copy the complete furniture `INSERT` block from the furniture library.
-- Keep it editable as a CAD block whenever possible.
-- Do not explode furniture into linework unless absolutely necessary.
+- One thin frame per zone is enough.
+- Do not draw dense cell grids unless needed.
+- Use compact adaptive zone-frame sizes based on item count.
+- Keep consistent furniture thumbnail scale and spacing.
+- Prefer the smallest layout that remains readable.
+- Zone frames with few items should remain small.
 
-### 5. Furniture code and brand placement
+### 4. One graphic per furniture record / model
 
-For every matched furniture item:
-- Show the **complete furniture code from Excel**, not only the 6-character matching key.
-- Show the corresponding **brand name from the furniture library** when available.
-- Place **both the furniture code and brand name at the geometric center of the displayed furniture block**.
-- Stack code and brand vertically around the center so they stay visually associated with the block.
-- Keep the text editable.
+Within a zone, show each summarized furniture item once. Do not draw repeated copies just because quantity > 1. Show quantity as `×N`.
 
-### 6. Font
+### 5. Preserve furniture geometry
 
-All returned text must use **黑体 / SimHei**.
+For matched items:
+- Copy the complete furniture block from the library.
+- Keep it as an editable CAD `INSERT` block whenever possible.
+- Do not explode linework unless there is no alternative.
+- Scale uniformly to fit the index cell while preserving proportions.
 
-Create / use a CAD text style such as:
-- Style name: `HEITI`
-- Font: `simhei.ttf`
+### 6. Furniture code + brand at block center
 
-Apply it to:
-- Zone titles
-- Furniture codes
-- Brand names
-- Quantities
-- Missing-item labels
-- Any newly generated annotation text
+For every matched item:
+- Display the **complete original Excel furniture code**.
+- Display the detected **brand name** when available.
+- Put both code and brand at the **geometric center of the displayed furniture block**.
+- Stack them vertically around the center.
+- Keep all text editable.
 
-If practical, convert existing TEXT/MTEXT in the returned drawing to the same HEITI text style as well.
+### 7. All text in 黑体 / SimHei
 
-### 7. Missing furniture
+Use a CAD text style:
+- style: `HEITI`
+- font: `simhei.ttf`
 
-If a furniture code cannot be matched by the first-6-character rule:
-- Do not substitute a visually similar item.
-- List it in its correct zone.
-- Display the missing furniture code in **red**.
-- Add a clear marker such as `MISSING`.
-- Include quantity.
+Apply it to zone titles, furniture codes, brand names, quantities, red missing codes, and all newly generated annotation text. When practical, convert returned TEXT/MTEXT/ATTRIB entities to the same style.
 
-Recommended format:
-`MISSING  BF1234Z2  ×2`
+### 8. Missing furniture: red code only
 
-### 8. Clean layout
+If a furniture item cannot be matched by the 6-character rule:
+- do not substitute another model;
+- keep it in the correct zone index;
+- show the **furniture code itself in red**;
+- **do not write `MISSING`**;
+- if quantity > 1, retain a small red `×N` near/below the red code.
 
-The index must be easy to read and should not look crowded.
+The red code alone is the missing indicator.
 
-Recommended behavior:
-- Auto-calculate blank space to the right or below the existing base drawing.
-- Use consistent zone frames.
-- Use a grid within each zone.
-- Scale furniture graphics to fit a consistent cell size while preserving aspect ratio.
-- Keep reasonable white space between items.
-- Allow zone frame height to adapt to item count so zones with few items do not waste excessive space.
+## Brand detection
 
-## Brand Detection
+Priority:
+1. block attributes;
+2. nearby `TEXT` / `MTEXT` around the source furniture block;
+3. preserve original spelling such as `Minotti`, `B&B`, `ARFLEX`.
 
-Brand names may exist as nearby `TEXT`/`MTEXT` entities rather than block attributes.
+Exclude model codes, dimensions, quantities, and generic labels from brand candidates.
 
-When extracting brand data from the furniture library:
-1. Prefer explicit block attributes if present.
-2. Otherwise inspect nearby text around the source furniture block.
-3. Exclude text that is clearly the furniture code itself, dimensions, quantities, or generic labels.
-4. Preserve the original brand spelling, e.g. `Minotti`, `B&B`, `ARFLEX`.
+## Excel parsing
 
-## Excel Parsing
-
-The parser must support sheets that contain multiple repeated column groups.
-
-Detect columns by header meaning rather than fixed column letters whenever possible:
+Detect columns by header meaning, not fixed column letters:
 - 区域 / 区域号 / 分区 / AREA / ZONE
-- 编号 / 家具编号 / 产品编号 / CODE / MODEL
-- 数量 / QTY / QUANTITY
+- 编号 / 家具编号 / 产品编号 / CODE / MODEL / 型号
+- 数量 / QTY / QUANTITY / 数目
 
-Normalize zone values to a sortable display form such as `01区`, `02区`, etc.
+Normalize numeric zones to `01区`, `02区`, etc.
 
 ## Deliverables
 
 Always generate:
+1. Final DXF.
+2. Match report TXT/CSV containing zone, original code, 6-character key, quantity, matched block, brand, and status.
+3. Preview PNG when DXF rendering is available.
 
-1. **Final DXF**
-   - Base drawing preserved.
-   - Furniture grouped by zone in blank space.
-   - Complete furniture codes retained.
-   - Brand names retained when available.
-   - Code + brand centered on furniture graphic.
-   - All text in SimHei/黑体.
-   - Missing models marked red.
+## Quality checks
 
-2. **Match report TXT or CSV**
-   - Zone
-   - Original Excel code
-   - 6-character match key
-   - Quantity
-   - Matched library block/code
-   - Brand
-   - Status: matched / missing / ambiguous
+Before returning:
+- Re-open the generated DXF with `ezdxf`.
+- Confirm the original base drawing remains unchanged.
+- Confirm all zone indexes are outside / around the base and spatially near the corresponding zone numbers when detectable.
+- Confirm zone panels do not overlap.
+- Confirm the drawing is compact and has no unnecessary dense grid lines.
+- Confirm full Excel code + brand are centered on matched furniture graphics.
+- Confirm all generated text uses `HEITI` / `simhei.ttf`.
+- Confirm unmatched furniture contains **no `MISSING` text** and is represented by red code only.
+- Confirm furniture remains as blocks where possible.
 
-3. Optional preview image if the environment can render DXF.
+## Runtime
 
-## Quality Checks Before Returning
-
-Before returning the final drawing:
-- Re-open the generated DXF with `ezdxf` to verify that it is structurally readable.
-- Confirm all expected zones are present.
-- Confirm matched items use the correct first-6-character key.
-- Confirm missing items are red.
-- Confirm furniture code + brand are positioned at the center of their furniture graphic.
-- Confirm all generated text entities use the `HEITI` style.
-- Confirm furniture geometry remains as blocks where possible.
-- Confirm the original base drawing was not unintentionally moved, deleted, exploded, or scaled.
-
-## Recommended Runtime
-
-Use Python with:
+Recommended Python dependencies:
 - `ezdxf`
 - `openpyxl`
 
-Run the included script from `scripts/excel_cad.py` and adjust its layout parameters only when the specific drawing requires it.
+Use `scripts/excel_cad.py` as the reference implementation.
