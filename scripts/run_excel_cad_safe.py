@@ -6,15 +6,16 @@ from pathlib import Path
 
 from excel_cad import build
 from dxf_compat import finalize_for_autocad2021
+from enforce_colors import enforce_label_colors
 
-BUILD_MARKER = "EXCEL_CAD_SAFE_BUILD_V2"
+BUILD_MARKER = "EXCEL_CAD_SAFE_BUILD_V3"
 
 
 def main() -> None:
     p = argparse.ArgumentParser(
         description=(
-            "Safe Excel-CAD pipeline: generate zone furniture index, then recover/audit/"
-            "rewrite/validate as AutoCAD 2021 compatible AC1027 ASCII DXF."
+            "Safe Excel-CAD pipeline: generate zone furniture index, enforce label colors, "
+            "then recover/audit/rewrite/validate as AutoCAD 2021 compatible AC1027 ASCII DXF."
         )
     )
     p.add_argument("--excel", required=True, type=Path)
@@ -29,14 +30,31 @@ def main() -> None:
     report = args.report or args.output.with_name(args.output.stem + "_match_report.csv")
     validation_report = args.validation_report or args.output.with_name(args.output.stem + "_validation.json")
     temp = args.output.with_name(args.output.stem + "__working.dxf")
+    recolored = args.output.with_name(args.output.stem + "__recolored.dxf")
 
     result = build(args.excel, args.base, args.library, temp, report, args.sheet)
-    compat = finalize_for_autocad2021(temp, args.output)
+
+    # First compatibility rewrite creates a stable AC1027 ASCII working file.
+    compat_stage1 = finalize_for_autocad2021(temp, recolored)
+
+    # Enforce final annotation colors on the stable DXF bytes:
+    # matched furniture code = ACI 2 yellow; missing code/name = ACI 1 red; brand = ACI 7.
+    color_result = enforce_label_colors(recolored, report)
+
+    # Run the compatibility pipeline again AFTER recoloring so no later save step can alter colors.
+    compat = finalize_for_autocad2021(recolored, args.output)
 
     validation = {
         "build_marker": BUILD_MARKER,
         "output": str(args.output),
         "report": str(report),
+        "color_rules": {
+            "matched_furniture_code_aci": 2,
+            "missing_furniture_code_name_aci": 1,
+            "brand_aci": 7,
+        },
+        "color_enforcement": color_result,
+        "compatibility_stage1": compat_stage1,
         "compatibility": compat,
         "build": result,
         "passed": True,
@@ -47,10 +65,11 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    try:
-        temp.unlink(missing_ok=True)
-    except Exception:
-        pass
+    for pth in (temp, recolored):
+        try:
+            pth.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     print(json.dumps(validation, ensure_ascii=False))
     print(str(validation_report))
