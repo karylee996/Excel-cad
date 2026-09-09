@@ -15,8 +15,9 @@
 - 成品保留家具库中的**品牌名**（能够识别时）。
 - 家具编码和品牌名均放在家具图块的**几何中心**。
 - 所有文字统一使用 **黑体 / SimHei**，CAD 文字样式名为 `HEITI`。
-- 家具库中不存在或无法确定的型号，**只用红色显示家具编号**；不再显示 `MISSING`。数量大于 1 时保留红色 `×N`。
+- 家具库中不存在或无法确定的型号，**只用红色显示家具编号**；不显示 `MISSING`。数量大于 1 时保留红色 `×N`。
 - 家具块尽量保持 `INSERT` 块，不炸开。
+- **所有最终 DXF 必须经过 AutoCAD 2021 兼容化和二次验证后才能返回。**
 
 完整执行规范见 [`SKILL.md`](./SKILL.md)。
 
@@ -37,10 +38,14 @@ Excel 同一张表中可以存在多组重复的 `区域 / 编号 / 数量` 列�
 pip install -r requirements.txt
 ```
 
-## 运行
+## 推荐运行方式（必须使用安全入口）
+
+不要直接把 `scripts/excel_cad.py` 生成的工作文件当作最终成品返回。
+
+请使用：
 
 ```bash
-python scripts/excel_cad.py \
+python scripts/run_excel_cad_safe.py \
   --excel showroom.xlsx \
   --base base.dxf \
   --library furniture_library.dxf \
@@ -51,12 +56,37 @@ python scripts/excel_cad.py \
 Windows PowerShell：
 
 ```powershell
-python scripts/excel_cad.py `
+python scripts/run_excel_cad_safe.py `
   --excel "202609无锡展厅还原.xlsx" `
   --base "底图.dxf" `
   --library "家具库.dxf" `
   --output "无锡展厅_家具分区就近归纳.dxf" `
   --report "无锡展厅_家具分区就近归纳_匹配报告.csv"
+```
+
+该入口会自动执行两步：
+
+1. `scripts/excel_cad.py` 生成临时工作 DXF；
+2. `scripts/dxf_compat.py` 对工作 DXF 做恢复读取、审计、版本统一、ASCII 重写、二次恢复读取和非空检查。
+
+## AutoCAD 2021 兼容策略
+
+为避免再次出现“DXF 在 Python 中能读，但 AutoCAD 2021 打不开 / 打开后是 Drawing1 空图”的问题，最终输出强制执行：
+
+- 使用 `ezdxf.recover.readfile()` 读取和修复；
+- 运行 DXF audit；
+- 强制保存为 **AC1027 / AutoCAD 2013 DXF**；
+- 使用 **ASCII DXF** 写出；
+- 对最终文件再次 `recover.readfile()`；
+- 检查模型空间实体数量必须大于 0；
+- 检查图形 extents 必须有效；
+- 检查输出文件不能异常过小/截断；
+- 最终恢复审计仍有结构错误时，禁止返回该文件。
+
+如果只需要把一个已有 DXF 做兼容化，也可以单独运行：
+
+```bash
+python scripts/dxf_compat.py input.dxf output_AutoCAD2021.dxf
 ```
 
 ## 匹配逻辑
@@ -71,7 +101,7 @@ AC1234HZ       -> AC1234
 
 ## 输出
 
-1. `*.dxf`：围绕底图、按区域就近归纳的最终 CAD；
+1. `*.dxf`：围绕底图、按区域就近归纳，并通过 AutoCAD 2021 兼容验证的最终 CAD；
 2. `*.csv`：匹配报告，包含区域、原始编号、6 位匹配键、数量、家具库块名、品牌和状态。
 
 ## 品牌识别
@@ -89,4 +119,4 @@ Font:  simhei.ttf
 
 ## 设计目的
 
-这个 Skill 服务于家居品牌陈列 / 展厅还原工作流。重点不是直接完成最终空间陈列，而是把 Excel 清单和家具 CAD 库整理成一张**离对应区域近、容易查看、容易拖拽继续布置**的家具索引图，减少逐个查找、复制和核对的时间。
+这个 Skill 服务于家居品牌陈列 / 展厅还原工作流。重点不是直接完成最终空间陈列，而是把 Excel 清单和家具 CAD 库整理成一张**离对应区域近、容易查看、容易拖拽继续布置**的家具索引图，并保证最终 DXF 对 AutoCAD 2021 更稳妥，减少逐个查找、复制、核对以及文件兼容故障的时间。
