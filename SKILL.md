@@ -1,3 +1,8 @@
+---
+name: excel-cad
+description: Convert a showroom furniture Excel schedule, a CAD base drawing, and a CAD furniture library into a clean DXF furniture index grouped by zone. Match furniture by the first 6 characters of the normalized model code, preserve full Excel codes and detected brand names, center code and brand text on each furniture block, use SimHei/黑体 for all returned text, and mark unmatched furniture in red. Use for showroom restoration, furniture schedule to CAD, Excel-to-DXF furniture indexing, zone-based CAD furniture summaries, or furniture-library matching workflows.
+---
+
 # Excel-CAD Showroom Furniture Index Skill
 
 ## Purpose
