@@ -1,6 +1,6 @@
 ---
 name: excel-cad
-description: Convert a showroom furniture Excel schedule, CAD base drawing, and CAD furniture library into a clean zone-based DXF index. Match by the first 6 characters of the normalized code, preserve full codes and brands, center code and brand text, use SimHei/黑体, keep matched furniture codes ACI 2 yellow, keep unmatched furniture codes/names ACI 1 red, place zone indexes around the base near their area numbers, create true-size rectangular placeholder blocks from Excel length/width for unmatched furniture, and ALWAYS execute the repository safe runner and validate the returned DXF for AutoCAD 2021 compatibility.
+description: Convert a showroom furniture Excel schedule, CAD base drawing, and CAD furniture library into a clean zone-based DXF index. Match by the first 6 characters of the normalized code, preserve full codes and brands, center code and brand text, use SimHei/黑体, keep matched furniture codes ACI 2 yellow, keep unmatched furniture codes/names ACI 1 red, place zone indexes around the base near their area numbers, create true-size rectangular placeholder blocks from Excel length/width for unmatched furniture, keep those dimension-placeholder INSERT instances at true 1:1 scale, and ALWAYS execute the repository safe runner and validate the returned DXF for AutoCAD 2021 compatibility.
 ---
 
 # Excel-CAD Showroom Furniture Index Skill
@@ -15,14 +15,15 @@ When this Skill is invoked from a new chat:
 2. Read the actual repository files:
    - `scripts/excel_cad.py`
    - `scripts/dxf_compat.py`
+   - `scripts/enforce_placeholder_scale.py`
    - `scripts/enforce_colors.py`
    - `scripts/run_excel_cad_safe.py`
 3. Use the uploaded Excel, base DXF and furniture-library DXF as the real input files.
 4. Execute **`scripts/run_excel_cad_safe.py`** as the only approved user-facing pipeline.
 5. Do NOT reimplement the workflow ad hoc in a fresh temporary script unless the repository script itself cannot run and is first repaired.
-6. Do NOT return the intermediate working/recolored DXFs.
+6. Do NOT return the intermediate working/scaled/recolored DXFs.
 7. The safe runner must produce both the final validated DXF and a `*_validation.json` manifest.
-8. The validation manifest must contain `build_marker == "EXCEL_CAD_SAFE_BUILD_V3"` and `passed == true`.
+8. The validation manifest must contain `build_marker == "EXCEL_CAD_SAFE_BUILD_V4"` and `passed == true`.
 9. If the validation manifest is missing, malformed, or fails any check, the DXF MUST NOT be returned as a finished file.
 10. Before sharing the final artifact, confirm the final path exists and corresponds to the validated file referenced in the manifest.
 
@@ -107,9 +108,22 @@ When valid length + width are available:
 - create an editable true-size rectangular placeholder block in millimetres;
 - center the true-size block on its origin;
 - keep placeholder geometry black/neutral;
-- index instance may be uniformly scaled down for display;
+- **the modelspace/index INSERT instance must also remain at 1:1 scale (`xscale = yscale = zscale = 1.0`)**;
+- **never shrink a large dimension-placeholder merely to fit a compact zone-index cell**;
+- if a true-size placeholder would exceed the current panel/cell, expand the panel layout outward instead of reducing its scale;
 - keep code and product name red and centered on the placeholder;
 - quantity remains red when applicable.
+
+This rule is intentionally different from matched library furniture. Matched library blocks may be uniformly scaled for thumbnail/index presentation, but dimension placeholders represent fallback geometry whose displayed size must truthfully correspond to the Excel plan dimensions.
+
+The safe runner must execute `scripts/enforce_placeholder_scale.py` before final color enforcement. The validation manifest must record:
+
+```json
+"placeholder_scale_rules": {
+  "dimension_placeholder_insert_scale": 1.0,
+  "large_placeholders_may_not_be_shrunk_for_layout": true
+}
+```
 
 When dimensions are unavailable/unreliable:
 - do not invent a rectangle;
@@ -124,11 +138,13 @@ The final returned DXF MUST:
 1. be generated through the repository safe runner;
 2. be recovery-read and audited;
 3. be written as AC1027 AutoCAD 2013 ASCII DXF;
-4. have colors enforced after the first stable compatibility rewrite;
-5. pass the compatibility finalizer again after color enforcement;
-6. be recovery-read again with no structural errors;
-7. have non-empty modelspace, valid extents, and non-trivial file size;
-8. produce a validation JSON with `EXCEL_CAD_SAFE_BUILD_V3`.
+4. have true-size dimension-placeholder instance scale enforced after the first stable compatibility rewrite;
+5. be compatibility-rewritten again after placeholder scale enforcement;
+6. have colors enforced on the stable DXF;
+7. pass the compatibility finalizer again after color enforcement;
+8. be recovery-read again with no structural errors;
+9. have non-empty modelspace, valid extents, and non-trivial file size;
+10. produce a validation JSON with `EXCEL_CAD_SAFE_BUILD_V4`.
 
 ## Deliverables
 
@@ -142,7 +158,7 @@ Always generate:
 
 Before returning any DXF:
 - actual repository safe runner executed;
-- validation manifest contains `build_marker == EXCEL_CAD_SAFE_BUILD_V3` and `passed == true`;
+- validation manifest contains `build_marker == EXCEL_CAD_SAFE_BUILD_V4` and `passed == true`;
 - final DXF is AC1027 ASCII and passes recovery audit;
 - modelspace entity count > 0 and extents valid;
 - original base drawing is present;
@@ -153,6 +169,8 @@ Before returning any DXF:
 - brand names are neutral ACI 7;
 - no `MISSING` text exists;
 - unmatched items with reliable dimensions use true-size rectangle block definitions;
+- every generated dimension-placeholder INSERT is 1:1 scale and therefore displays the Excel plan dimensions truthfully;
+- no large dimension-placeholder is reduced just to make the zone index more compact;
 - furniture remains blocks where possible.
 
-If any execution, color, or compatibility check fails, do not return the DXF as finished.
+If any execution, placeholder-scale, color, or compatibility check fails, do not return the DXF as finished.
